@@ -1,0 +1,17 @@
+# 真实配置（含令牌），不要提交
+config.env
+
+# 日志
+logs/*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

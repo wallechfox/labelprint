@@ -1,0 +1,6 @@
+# shell 脚本必须保持 LF，否则容器内无法执行
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.env text eol=lf
+config.env.example text eol=lf

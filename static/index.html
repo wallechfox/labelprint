@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>标签打印</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 18px 12px 44px; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: #f5f6f8; color: #222; }
+  .wrap { max-width: 540px; margin: 0 auto; }
+  h1 { font-size: 19px; margin: 0 0 12px; }
+  .card { background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.06); margin-bottom: 12px; }
+  .card h2 { font-size: 14px; margin: 0 0 8px; color: #333; }
+  button.mini { font-size: 12px; padding: 4px 10px; border: 1px solid #dcdfe6; border-radius: 6px;
+                background: #fff; color: #666; cursor: pointer; }
+  button.mini:active { background: #f2f3f5; color: #333; }
+  button.mini:disabled { color: #bbb; border-color: #eee; cursor: not-allowed; background: #fafafa; }
+  .logbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .pager { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; }
+  .pager .hint { margin: 0; }
+
+  .ctl { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: #666; }
+  .ctl select { font-size: 13px; padding: 5px 4px; border: 1px solid #dcdfe6; border-radius: 6px; background: #fff; color: #333; }
+  .ctl label.chk { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+  .ctl input[type=checkbox] { width: 15px; height: 15px; margin: 0; }
+  .ctl.disabled { opacity: .45; pointer-events: none; }
+
+  /* 编辑区（即预览） */
+  .paperbox { margin-top: 10px; overflow: hidden; }
+  .paper { background: #fff; border: 1px solid #e4e7ed; border-radius: 6px; overflow: hidden;
+           transition: height .15s ease; }
+  #editor { outline: none; font-family: monospace; background: #fff; }
+  #editor .ln { white-space: pre; display: block; }
+  /* 字符靠左：输入瞬间新字符会被浏览器挤进上一个 span（contenteditable 对 inline-block 的固有行为），
+     center 会把两个字符各裁一半（跳的来源），left 则只完整显示前一个字符，新字符干净地落在下一格 */
+  #editor .ln span { display: inline-block; text-align: left; overflow: hidden; }
+  #editor .ln.ts { color: #555; background: #f2f6ff; }
+  /* 虚线在留白区【底部】= 真正的切纸位置；灰区会被完整吐出来 */
+  #editor .feed { background: #fafafa; border-bottom: 1px dashed #e47ab0; }
+
+  .pv { margin-top: 10px; text-align: center; }
+  .pv canvas { max-width: 100%; border: 1px solid #e4e7ed; border-radius: 6px; background: #fff; }
+  .meta { font-size: 12px; color: #888; margin-top: 6px; }
+  .meta b { color: #409eff; font-weight: normal; }
+
+  .slider { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; color: #666; }
+  .slider span.lb { width: 74px; }
+  .slider input[type=range] { flex: 1; }
+  .slider .val { width: 42px; text-align: right; }
+
+  .chkline { display: flex; gap: 14px; font-size: 13px; color: #666; margin-top: 8px; flex-wrap: wrap; }
+  .chkline label { display: inline-flex; align-items: center; gap: 4px; }
+  .chkline input { width: 15px; height: 15px; margin: 0; }
+  input[type=file] { font-size: 13px; margin-top: 6px; width: 100%; }
+
+  button.big { width: 100%; margin-top: 12px; padding: 12px; font-size: 16px; color: #fff; background: #409eff;
+               border: none; border-radius: 8px; cursor: pointer; }
+  button.big:active { background: #337ecc; }
+  button.big:disabled { background: #a8c8ee; cursor: not-allowed; }
+
+  /* 常规按钮（并排，不拉满整行） */
+  .btnrow { display: flex; justify-content: center; gap: 10px; margin-top: 12px; }
+  button.btn { padding: 9px 24px; font-size: 14px; border-radius: 8px; border: 1px solid #dcdfe6;
+               background: #fff; color: #333; cursor: pointer; }
+  button.btn:active { background: #f2f3f5; }
+  button.btn.primary { background: #409eff; border-color: #409eff; color: #fff; }
+  button.btn.primary:active { background: #337ecc; border-color: #337ecc; }
+  button.btn:disabled { background: #f5f6f8; color: #aaa; border-color: #e4e7ed; cursor: not-allowed; }
+  button.btn.primary:disabled { background: #a8c8ee; border-color: #a8c8ee; color: #fff; }
+  .msg { margin-top: 10px; font-size: 13px; min-height: 18px; text-align: center; }
+  .ok { color: #2ba245; }
+  .err { color: #e0483c; }
+  .link { font-size: 13px; color: #409eff; text-decoration: none; }
+  .log-item { border-top: 1px solid #eee; padding: 7px 0; font-size: 12.5px; }
+  .log-item .t { color: #999; margin-right: 6px; }
+  .r-ok { color: #2ba245; }
+  .r-err { color: #e0483c; }
+  .hint { font-size: 12px; color: #999; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>标签打印</h1>
+
+  <!-- ==================== 文字（编辑器 = 预览） ==================== -->
+  <div class="card">
+    <h2>文字</h2>
+
+    <div class="ctl">
+      对齐
+      <select id="alignT">
+        <option value="0">靠左</option><option value="1">居中</option><option value="2">靠右</option>
+      </select>
+      字号
+      <select id="sizeT">
+        <option value="1">1x</option><option value="2" selected>2x</option>
+        <option value="3">3x</option><option value="4">4x</option>
+        <option value="5">5x</option><option value="6">6x</option>
+      </select>
+      <label class="chk" title="勾选后本次打印不写入打印记录"><input type="checkbox" id="noLog">无痕模式</label>
+    </div>
+
+    <div class="ctl" id="tsRowT">
+      <label class="chk"><input type="checkbox" id="tsT">时间戳</label>
+      <select id="tsPosT"><option value="top">在最上</option><option value="bottom" selected>在最下</option></select>
+      <select id="tsFmtT">
+        <option value="datetime">2026-10-17 13:45:02</option>
+        <option value="datetime_min">2026-10-17 13:45</option>
+        <option value="cn_full">2026年10月17日 13:45:02</option>
+        <option value="cn_short">10月17日 13:45</option>
+        <option value="date">2026-10-17</option>
+        <option value="time">13:45</option>
+        <option value="compact">20261017134502</option>
+      </select>
+      <select id="tsSizeT">
+        <option value="1" selected>1x</option><option value="2">2x</option>
+        <option value="3">3x</option><option value="4">4x</option><option value="5">5x</option><option value="6">6x</option>
+      </select>
+    </div>
+
+    <div class="paperbox">
+      <div class="paper" id="paperT">
+        <div id="editor" contenteditable="true" spellcheck="false"></div>
+      </div>
+    </div>
+    <div class="meta" id="metaT"></div>
+    <div class="hint">直接在上面输入，看到的就是打印出来的样子（灰底为时间戳，粉色虚线以下是手撕留白）</div>
+
+    <div class="slider"><span class="lb">末尾空白行</span>
+      <input type="range" id="feedT" min="0" max="12" step="1" value="4"><span class="val" id="feedTV">4</span></div>
+
+    <div class="btnrow">
+      <button class="btn" id="clearText" type="button">清空</button>
+      <button class="btn primary" id="btnText" type="button">打印文字</button>
+    </div>
+    <div class="msg" id="msgText"></div>
+  </div>
+
+  <!-- ==================== 图片 ==================== -->
+  <div class="card">
+    <h2>图片</h2>
+    <input type="file" id="file" accept="image/*">
+
+    <div id="imgOpts" style="display:none">
+      <div class="ctl">
+        旋转
+        <select id="rotI">
+          <option value="0">0°</option><option value="90">90°</option>
+          <option value="180">180°</option><option value="270">270°</option>
+        </select>
+        对齐
+        <select id="alignI">
+          <option value="0">靠左</option><option value="1">居中</option><option value="2">靠右</option>
+        </select>
+        <label class="chk" title="勾选后本次打印不写入打印记录"><input type="checkbox" id="noLogI">无痕模式</label>
+      </div>
+
+      <div class="ctl">
+        <label class="chk"><input type="checkbox" id="tsI">时间戳</label>
+        <select id="tsPosI"><option value="top">在最上</option><option value="bottom" selected>在最下</option></select>
+        <select id="tsFmtI">
+          <option value="datetime">2026-10-17 13:45:02</option>
+          <option value="datetime_min">2026-10-17 13:45</option>
+          <option value="cn_full">2026年10月17日 13:45:02</option>
+          <option value="cn_short">10月17日 13:45</option>
+          <option value="date">2026-10-17</option>
+          <option value="time">13:45</option>
+          <option value="compact">20261017134502</option>
+          </select>
+          <select id="tsSizeI">
+          <option value="1" selected>1x</option><option value="2">2x</option>
+          <option value="3">3x</option><option value="4">4x</option><option value="5">5x</option><option value="6">6x</option>
+        </select>
+      </div>
+
+      <div class="slider"><span class="lb">阈值</span>
+        <input type="range" id="thr" min="0" max="255" step="1" value="150"><span class="val" id="thrV">150</span></div>
+      <div class="slider"><span class="lb">亮度</span>
+        <input type="range" id="bri" min="0.5" max="2" step="0.05" value="1"><span class="val" id="briV">1.00</span></div>
+      <div class="slider"><span class="lb">对比度</span>
+        <input type="range" id="con" min="0.5" max="2" step="0.05" value="1"><span class="val" id="conV">1.00</span></div>
+
+      <div class="chkline">
+        <label><input type="checkbox" id="dither"> 照片模式</label>
+        <label><input type="checkbox" id="invert"> 反色</label>
+        <a href="#" class="link" id="clearImg">移除图片</a>
+      </div>
+
+      <div class="pv"><canvas id="cvI"></canvas></div>
+      <div class="meta" id="metaI"></div>
+
+      <div class="slider"><span class="lb">末尾空白行</span>
+        <input type="range" id="feedI" min="0" max="12" step="1" value="4"><span class="val" id="feedIV">4</span></div>
+
+      <button class="big" id="btnImg">打印图片</button>
+      <div class="msg" id="msgImg"></div>
+    </div>
+  </div>
+
+  <div class="logbar">
+    <a href="#" class="link" id="loadLogs">查看打印记录</a>
+    <button class="mini" id="clearLogs" type="button">清空</button>
+  </div>
+  <div id="logList"></div>
+  <div class="pager" id="logPager" style="display:none">
+    <button class="mini" id="logPrev" type="button">上一页</button>
+    <span class="hint" id="logPageInfo"></span>
+    <button class="mini" id="logNext" type="button">下一页</button>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const TOKEN = new URLSearchParams(location.search).get('token') || '';
+
+let CFG = { width_dots: 384, paper_dots: 384, char_w: 12, char_h: 24, feed: 4, size: 2, align: 0, threshold: 150 };
+
+// 纸宽（毫米）：58mm 纸 = 384 点，80mm 纸 = 576 点
+function paperMm() {
+  return (CFG.paper_dots || 384) >= 570 ? 80 : 58;
+}
+let curFile = null, curImg = null, imgCanvas = null;
+let composing = false, timerT = null, lastText = '';
+
+const editor = $('editor');
+
+if (!TOKEN) {
+  $('btnText').disabled = true;
+  $('msgText').className = 'msg err';
+  $('msgText').textContent = '网址缺少 /?token=xxx 参数，无法使用（例如 http://服务器地址/?token=xxx）';
+}
+
+// ---------- 配置 ----------
+fetch('/config?token=' + encodeURIComponent(TOKEN)).then(r => r.json()).then(d => {
+  CFG = Object.assign(CFG, d);
+  $('alignT').value = String(CFG.align);
+  $('sizeT').value = String(CFG.size);
+  $('feedT').value = CFG.feed; $('feedTV').textContent = CFG.feed;
+  $('feedI').value = CFG.feed; $('feedIV').textContent = CFG.feed;
+  $('thr').value = CFG.threshold; $('thrV').textContent = CFG.threshold;
+  $('tsT').checked = !!CFG.ts_enable; $('tsI').checked = !!CFG.ts_enable;
+  $('tsPosT').value = CFG.ts_pos || 'bottom'; $('tsPosI').value = CFG.ts_pos || 'bottom';
+  $('tsFmtT').value = CFG.ts_format || 'datetime'; $('tsFmtI').value = CFG.ts_format || 'datetime';
+  $('tsSizeT').value = String(CFG.ts_size ?? 1); $('tsSizeI').value = String(CFG.ts_size ?? 1);
+  syncTs();
+  // 如果用户已经在打字了，别用空内容把输入区清掉
+  if (!plainText()) renderText(lastText, 0, true);
+}).catch(() => { if (!plainText()) renderText(lastText, 0, true); });
+
+function syncTs() {
+  $('tsPosT').disabled = !$('tsT').checked;
+  $('tsFmtT').disabled = !$('tsT').checked;
+  $('tsSizeT').disabled = !$('tsT').checked;
+  $('tsPosI').disabled = !$('tsI').checked;
+  $('tsFmtI').disabled = !$('tsI').checked;
+  $('tsSizeI').disabled = !$('tsI').checked;
+}
+
+// ---------- 全角判断 ----------
+function isWide(ch) {
+  const c = ch.codePointAt(0);
+  return (c >= 0x1100 && c <= 0x115F) || (c >= 0x2E80 && c <= 0xA4CF) ||
+         (c >= 0xAC00 && c <= 0xD7A3) || (c >= 0xF900 && c <= 0xFAFF) ||
+         (c >= 0xFE30 && c <= 0xFE4F) || (c >= 0xFF00 && c <= 0xFF60) ||
+         (c >= 0xFFE0 && c <= 0xFFE6);
+}
+
+// ---------- 从编辑器提取纯文本 ----------
+function plainText() {
+  // 只有 hard 行（用户手动回车产生的段落结尾）才补 \n，
+  // 自动折出来的软换行必须忽略，否则改小字号后不会重新排版
+  let s = '';
+  editor.querySelectorAll('.ln[data-kind="text"]').forEach(el => {
+    s += el.textContent + (el.dataset.hard === '1' ? '\n' : '');
+  });
+  return s.replace(/\n$/, '');
+}
+
+// ---------- 光标偏移 ----------
+// 把 DOM 里的一个点（node, offset）换算成纯文本偏移。
+// 千万不能信 span 上的 data-i：用户打字时浏览器会把字塞进上一次渲染留下的旧 span，
+// 那时 data-i 已经过期，照它算光标就短了，后面输入的字会被插到前面去
+// （输入 123456 变成 265431 就是这么来的）
+function offsetOf(node, off) {
+  if (!node) return plainText().length;
+  const el = (node.nodeType === 3) ? node.parentElement : node;
+  const ln = (el && el.closest) ? el.closest('.ln') : null;
+  if (!ln || ln.dataset.kind !== 'text') {
+    return (node === editor && off === 0) ? 0 : plainText().length;
+  }
+  let n = 0;
+  for (const d of editor.querySelectorAll('.ln[data-kind="text"]')) {
+    if (d === ln) break;
+    n += d.textContent.length + (d.dataset.hard === '1' ? 1 : 0);
+  }
+  const r = document.createRange();
+  r.selectNodeContents(ln);
+  try { r.setEnd(node, off); } catch (e) { return n; }
+  return n + r.toString().length;
+}
+
+function caretOffset() {
+  const sel = window.getSelection();
+  if (!sel || !sel.anchorNode) return plainText().length;
+  return offsetOf(sel.anchorNode, sel.anchorOffset);
+}
+
+// ---------- 选区偏移（纯文本坐标，含换行） ----------
+function selOffsets() {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) {
+    const c = plainText().length;
+    return { start: c, end: c };
+  }
+  const r = sel.getRangeAt(0);
+  if (r.collapsed) {
+    const c = caretOffset();
+    return { start: c, end: c };
+  }
+  let start = offsetOf(r.startContainer, r.startOffset);
+  let end = offsetOf(r.endContainer, r.endOffset);
+  if (end < start) { const t = start; start = end; end = t; }
+  return { start, end };
+}
+
+// 把纯文本偏移换成 DOM 点：逐行算区间，落在哪一行就是哪一行。
+// 偏移 == 行尾（换行符本身的位置）→ 这一行的行尾，不能推到下一行去。
+// span 可能是用户打字时长出来的多字符 span，所以按字符数逐段找。
+function caretPos(off) {
+  const lns = editor.querySelectorAll('.ln[data-kind="text"]');
+  let ln = null, local = 0, n = 0;
+  for (const d of lns) {
+    const len = d.textContent.length;
+    if (off <= n + len) { ln = d; local = Math.max(0, off - n); break; }
+    n += len + (d.dataset.hard === '1' ? 1 : 0);
+  }
+  if (!ln) {
+    if (lns.length) { ln = lns[lns.length - 1]; local = ln.textContent.length; }
+    else return [editor, 0];
+  }
+  const spans = ln.querySelectorAll('span');
+  if (!spans.length) return [ln, 0];   // 空行（末尾回车的新行也是它）：行首
+  if (local >= ln.textContent.length) {
+    // 行尾：光标落在行元素末尾（最后一个 span 之后），而不是最后一个 span 的文本节点里。
+    // 否则下一次输入的字会被浏览器塞进那个固定宽度的 span，挤成一团被 overflow 裁掉（输入数字“跳”的来源）
+    return [ln, ln.childNodes.length];
+  }
+  let k = 0;
+  for (const s of spans) {
+    const L = s.textContent.length;
+    if (local <= k + L) return [(s.firstChild || s), local - k];
+    k += L;
+  }
+  const last = spans[spans.length - 1];
+  return [(last.firstChild || last), last.textContent.length];
+}
+
+function setCaret(off, doFocus) {
+  const sel = window.getSelection();
+  const range = document.createRange();
+  if (doFocus) editor.focus({ preventScroll: true });
+  const p = caretPos(off);
+  range.setStart(p[0], p[1]);
+  range.collapse(true);
+  sel.removeAllRanges(); sel.addRange(range);
+}
+
+// ---------- 上下键：按「行 + 视觉列」移动 ----------
+// 列 = 视觉宽度单位（半角 1 / 全角 2），和前端 span 宽度、后端排版同口径。
+// 每行都算（硬换行 + 自动折出来的软换行），用户看得见的行都能上下跳。
+
+// 把纯文本偏移换算成 (第几行, 该行内的视觉列)
+function lineCol(off) {
+  const lns = editor.querySelectorAll('.ln[data-kind="text"]');
+  let n = 0;
+  for (let li = 0; li < lns.length; li++) {
+    const d = lns[li];
+    const len = d.textContent.length;
+    if (off <= n + len) {
+      const before = Math.max(0, off - n);   // 该行内光标之前的字符数
+      let col = 0;
+      for (let i = 0; i < before; i++) col += isWide(d.textContent[i]) ? 2 : 1;
+      return { li, col };
+    }
+    n += len + (d.dataset.hard === '1' ? 1 : 0);
+  }
+  // 偏移越界（不会发生）：兜底到最后一行行尾
+  const li = lns.length - 1;
+  const d = lns[li];
+  let col = 0;
+  for (const ch of d.textContent) col += isWide(ch) ? 2 : 1;
+  return { li, col };
+}
+
+// 目标列落在某个字符内部时退到该字符左边（光标不能停在半个字上）
+function colToIdx(lineText, targetCol) {
+  let acc = 0;
+  for (let i = 0; i < lineText.length; i++) {
+    const w = isWide(lineText[i]) ? 2 : 1;
+    if (acc + w > targetCol) return i;
+    acc += w;
+  }
+  return lineText.length;
+}
+
+// 第 li 行在纯文本里的起始偏移
+function lineStart(li) {
+  const lns = editor.querySelectorAll('.ln[data-kind="text"]');
+  let n = 0;
+  for (let i = 0; i < li; i++) {
+    const d = lns[i];
+    n += d.textContent.length + (d.dataset.hard === '1' ? 1 : 0);
+  }
+  return n;
+}
+
+// ---------- 渲染编辑器（= 预览） ----------
+let renderSeq = 0;
+
+async function renderText(text, caret, doFocus) {
+  // 每次重绘一个序号 + 记下此刻 DOM 里的文字：
+  // 预览是异步请求，回来时用户可能已经又打了几个字，
+  // 这时拿旧结果重绘、再按旧光标放光标，字就会被插到别的位置去
+  const seq = ++renderSeq;
+  const domAtStart = plainText();
+  // 重绘会清空 DOM：原来有焦点就还回去，拖滑块时不要把焦点抢回编辑器
+  const hadFocus = (doFocus === undefined) ? (document.activeElement === editor) : doFocus;
+  const fd = new FormData();
+  fd.append('text', text);
+  fd.append('align', $('alignT').value);
+  fd.append('size', $('sizeT').value);
+  fd.append('feed', $('feedT').value);
+  fd.append('ts_enable', $('tsT').checked ? 'true' : 'false');
+  fd.append('ts_pos', $('tsPosT').value);
+  fd.append('ts_fmt', $('tsFmtT').value);
+  fd.append('ts_size', $('tsSizeT').value);
+
+  let lay = null;
+  try {
+    const res = await fetch('/preview?token=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });
+    lay = await res.json().catch(() => null);
+  } catch (e) {
+    lay = null;
+  }
+  // 已经有更新的重绘在排队：这次结果作废
+  if (seq !== renderSeq) return;
+  // 等待期间用户又输入了：别用旧结果覆盖，交给下一次重绘（输入事件已经排好了）
+  if (plainText() !== domAtStart) return;
+  if (!lay || lay.status !== 'ok') { renderFallback(text); return; }
+
+  lastText = text;
+  editor.innerHTML = '';
+  editor.style.width = lay.width_dots + 'px';
+
+  // 内容为空时至少保留一行输入区，避免编辑区看起来只有一点点高
+  const blocks = lay.blocks.slice();
+  if (!blocks.some(b => b.type === 'text' && b.kind === 'text')) {
+    const sz = +$('sizeT').value || 2;
+    const ph = { type: 'text', kind: 'text', text: '', size: sz, hard: false, x: 0, y: 0, w: 0, h: (CFG.char_h || 24) * sz };
+    // 时间戳「在最上」时，正文其实在时间戳下面：
+    // 占位行必须插在时间戳之后，否则会把时间戳挤到下面，看着像没切换
+    let ins = 0;
+    const tsIdx = blocks.findIndex(b => b.type === 'text' && b.kind === 'timestamp');
+    if (tsIdx >= 0 && $('tsT').checked && $('tsPosT').value === 'top') ins = tsIdx + 1;
+    blocks.splice(ins, 0, ph);
+  }
+  // 最少保留 3 行高度，改字号/内容变短时页面不会突然塌陷
+  editor.style.minHeight = ((CFG.char_h || 24) * (+$('sizeT').value || 2) * 3) + 'px';
+
+  // 字符偏移 data-i 采用「纯文本坐标」：hard 行末尾的换行也占一位，
+  // 这样全选/跨行粘贴、跨行光标恢复才对得上
+  const textTotal = blocks.filter(b => b.type === 'text' && b.kind === 'text').length;
+  let idx = 0, textNo = 0;
+  for (const b of blocks) {
+    if (b.type === 'text') {
+      const div = document.createElement('div');
+      div.className = 'ln' + (b.kind === 'timestamp' ? ' ts' : '');
+      div.dataset.kind = b.kind;
+      div.dataset.hard = b.hard ? '1' : '0';
+      // 行高 = 字高 + 行距，要和后端 layout() 的几何一致，不然切线位置会偏
+      const lh = lay.char_h * b.size + (CFG.line_spacing || 0);
+      div.style.height = lh + 'px';
+      div.style.lineHeight = (lay.char_h * b.size) + 'px';
+      div.style.fontSize = Math.max(8, Math.round(lay.char_h * b.size * 0.72)) + 'px';
+      div.style.paddingLeft = b.x + 'px';
+      if (b.kind === 'timestamp') div.contentEditable = 'false';
+      for (const ch of b.text) {
+        const s = document.createElement('span');
+        s.textContent = ch;
+        // 用 min-width 而非 width：单字符时仍是点宽（半角 24 / 全角 48），
+        // 但输入瞬间新字符被浏览器挤进上一个 span 时，span 会被撑开容纳两个字符，
+        // 字符自然排在正确位置附近，重绘后归位时跳幅从一整格缩到几个像素
+        s.style.minWidth = (lay.char_w * b.size * (isWide(ch) ? 2 : 1)) + 'px';
+        s.style.height = (lay.char_h * b.size) + 'px';
+        s.style.lineHeight = (lay.char_h * b.size) + 'px';
+        if (b.kind === 'text') s.dataset.i = idx++;
+        div.appendChild(s);
+      }
+      if (!b.text) div.appendChild(document.createElement('br'));
+      editor.appendChild(div);
+      if (b.kind === 'text') {
+        textNo++;
+        if (b.hard && textNo < textTotal) idx++;   // 行尾换行占一个偏移
+      }
+    } else if (b.type === 'feed') {
+      const div = document.createElement('div');
+      div.className = 'feed';
+      div.contentEditable = 'false';
+      div.style.height = b.h + 'px';
+      editor.appendChild(div);
+    }
+  }
+
+  // 缩放以适应屏幕
+  const box = $('paperT').parentElement;
+  const avail = box.clientWidth;
+  const k = Math.min(1, avail / lay.width_dots);
+  // 纸面高度至少留 3 行，否则末尾空白行调到 0/1 时编辑区会被裁得只剩一条
+  const minDots = (CFG.char_h || 24) * (+$('sizeT').value || 2) * 3;
+  // 取三者的最大值：
+  //   editor.scrollHeight —— 编辑区真实内容高度（正文为空时多一行占位空行，排版里没有）
+  //   lay.total_dots      —— 排版总高
+  //   minDots             —— 最少 3 行
+  // 只按 total_dots 算，空白行调大后留白区底部会被裁掉，粉色虚线就看不见了
+  const contentH = Math.max(editor.scrollHeight || 0, lay.total_dots, minDots);
+  $('paperT').style.width = (lay.width_dots * k) + 'px';
+  // +3px 余量，避免虚线正好压在 overflow 裁剪线上
+  $('paperT').style.height = (contentH * k + 3) + 'px';
+  editor.style.transform = 'scale(' + k + ')';
+  editor.style.transformOrigin = 'top left';
+
+  let m = `纸宽 ${paperMm()}毫米 · ${lay.width_dots} 点 · 高 <b>${(lay.total_dots / 8).toFixed(0)} mm</b>`;
+  if (lay.line_count) m += ` · ${lay.line_count} 行`;
+  if (lay.wrapped) m += ' · <b>已自动折行</b>';
+  $('metaT').innerHTML = m;
+
+  if (caret !== null && caret !== undefined) setCaret(caret, hadFocus);
+}
+
+// 连不上服务时的兜底渲染（例如直接用 file:// 打开本文件）
+function renderFallback(text) {
+  const sz = +$('sizeT').value || 2;
+  const h = (CFG.char_h || 24) * sz;
+  editor.innerHTML = '';
+  editor.style.width = (CFG.width_dots || 384) + 'px';
+  editor.style.transform = 'none';
+  const lines = (text || '').split('\n');
+  for (const t of lines) {
+    const div = document.createElement('div');
+    div.className = 'ln';
+    div.dataset.kind = 'text';
+    div.dataset.hard = '1';
+    div.style.height = h + 'px';
+    div.style.lineHeight = h + 'px';
+    div.style.fontSize = Math.max(8, Math.round(h * 0.72)) + 'px';
+    div.style.paddingLeft = '0px';
+    div.textContent = t;
+    if (!t) div.appendChild(document.createElement('br'));
+    editor.appendChild(div);
+  }
+  $('metaT').innerHTML = '<b style="color:#e0483c">无法连接打印服务</b>：请通过 http(s)://服务地址/?token=xxx 打开';
+}
+
+function scheduleRender() {
+  if (composing) return;
+  clearTimeout(timerT);
+  const t = plainText();
+  // 光标必须按「此刻」的 DOM 现算：上一轮回车留下的旧位置会让下一个字插错地方
+  const c = caretOffset();
+  timerT = setTimeout(() => renderText(t, c), 40);
+}
+
+// ---------- 编辑器事件 ----------
+editor.addEventListener('input', scheduleRender);
+
+// 点在没有文字的地方（灰色留白、纸面空白区）时，光标回到最后一行的行尾，
+// 不能让光标停在留白里（那里的字根本进不了正文）；点在文字行上就交给浏览器
+$('paperT').addEventListener('mousedown', e => {
+  const el = e.target;
+  if (!el || !el.closest || !el.closest('.ln[data-kind="text"]')) {
+    e.preventDefault();
+    setCaret(plainText().length, true);
+  }
+});
+
+editor.addEventListener('compositionstart', () => { composing = true; });
+editor.addEventListener('compositionend', () => {
+  composing = false;
+  clearTimeout(timerT);
+  const t = plainText();
+  // 光标取提交后 DOM 里的真实位置（可能在文本中间），不能一律按末尾算
+  timerT = setTimeout(() => renderText(t, caretOffset()), 60);
+});
+
+editor.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    // 输入法选词/提交时也会按回车：这时必须放行，否则会在拼音没上屏时插进一个换行
+    if (e.isComposing || composing) return;
+    e.preventDefault();
+    // 有选区时先删掉选中的部分再换行（不能只按光标位置插入）
+    const res = replaceSelection('\n');
+    clearTimeout(timerT);
+    renderText(res.text, res.caret);
+    return;
+  }
+  // Home/End：逐字符 span + overflow:hidden 会把浏览器的行首/行尾导航搞坏
+  // （实测 Home 会卡在行中间），自己按纯文本坐标算
+  if ((e.key === 'Home' || e.key === 'End') && !e.isComposing && !composing) {
+    const lns = [...editor.querySelectorAll('.ln[data-kind="text"]')];
+    if (!lns.length) return;
+    e.preventDefault();
+    let to;
+    if (e.ctrlKey || e.metaKey) {
+      to = (e.key === 'Home') ? 0 : plainText().length;
+    } else {
+      const c = caretOffset();
+      let n = 0, start = 0, len = lns[lns.length - 1].textContent.length;
+      for (const d of lns) {
+        const L = d.textContent.length;
+        if (c <= n + L) { start = n; len = L; break; }
+        n += L + (d.dataset.hard === '1' ? 1 : 0);
+      }
+      to = (e.key === 'Home') ? start : start + len;
+    }
+    const sel = window.getSelection();
+    if (e.shiftKey && sel.anchorNode && editor.contains(sel.anchorNode)) {
+      // 按住 Shift：保留选区锚点，只移动焦点端。
+      // 不能用 Range.setStart/setEnd（焦点在锚点前面时会被压扁成空选区）
+      const p = caretPos(to);
+      sel.setBaseAndExtent(sel.anchorNode, sel.anchorOffset, p[0], p[1]);
+    } else {
+      setCaret(to, true);
+    }
+  }
+  // 上/下键：逐字符 span 会让浏览器跨行找不准，自己按「行 + 视觉列」算，
+  // 软换行也当一行跳；首行再往上、末行再往下时光标停住
+  if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.isComposing && !composing) {
+    const lns = [...editor.querySelectorAll('.ln[data-kind="text"]')];
+    if (!lns.length) return;
+    e.preventDefault();
+    const { li, col } = lineCol(caretOffset());
+    const target = (e.key === 'ArrowUp') ? li - 1 : li + 1;
+    if (target < 0 || target >= lns.length) return;
+    const to = lineStart(target) + colToIdx(lns[target].textContent, col);
+    const sel = window.getSelection();
+    if (e.shiftKey && sel.anchorNode && editor.contains(sel.anchorNode)) {
+      const p = caretPos(to);
+      sel.setBaseAndExtent(sel.anchorNode, sel.anchorOffset, p[0], p[1]);
+    } else {
+      setCaret(to, true);
+    }
+  }
+});
+
+// 用一段文本替换当前选区，返回 { text, caret }
+// 选区是否覆盖全文，用浏览器自己的 r.toString() 长度判断：
+// 各家的 Range 边界在 contenteditable 里会夹到留白块/文本块上，
+// 自己按字符偏移算容易差一个字符（结尾那个字清不掉就是这个原因）
+function replaceSelection(newText) {
+  const t = plainText();
+  const sel = window.getSelection();
+  const r = (sel && sel.rangeCount) ? sel.getRangeAt(0) : null;
+  const total = t.replace(/\n/g, '').length;
+  const selLen = r ? r.toString().length : 0;
+
+  if (r && !r.collapsed && total > 0 && selLen >= total) {
+    return { text: newText, caret: newText.length };   // 全选：整段换掉
+  }
+  const o = selOffsets();
+  return {
+    text: t.slice(0, o.start) + newText + t.slice(o.end),
+    caret: o.start + newText.length
+  };
+}
+
+editor.addEventListener('paste', e => {
+  e.preventDefault();
+  const txt = (e.clipboardData || window.clipboardData).getData('text');
+  const res = replaceSelection(txt);
+  clearTimeout(timerT);
+  renderText(res.text, res.caret);
+});
+
+['alignT', 'sizeT', 'tsPosT', 'tsFmtT', 'tsSizeT'].forEach(id => $(id).addEventListener('change', () => {
+  clearTimeout(timerT);
+  renderText(plainText(), caretOffset());
+}));
+$('tsT').addEventListener('change', () => {
+  syncTs();
+  clearTimeout(timerT);
+  renderText(plainText(), caretOffset());
+});
+$('feedT').addEventListener('input', () => {
+  $('feedTV').textContent = $('feedT').value;
+  clearTimeout(timerT);
+  renderText(plainText(), caretOffset());
+});
+
+// ---------- 图片处理 ----------
+function processImage() {
+  if (!curImg) return;
+  const rot = +$('rotI').value, thr = +$('thr').value;
+  const bri = +$('bri').value, con = +$('con').value;
+  const dither = $('dither').checked, invert = $('invert').checked;
+
+  let sw = curImg.naturalWidth, sh = curImg.naturalHeight;
+  if (rot === 90 || rot === 270) { const t = sw; sw = sh; sh = t; }
+  const dh = Math.max(1, Math.round(sh * CFG.width_dots / sw));
+
+  const off = document.createElement('canvas');
+  off.width = curImg.naturalWidth; off.height = curImg.naturalHeight;
+  off.getContext('2d').drawImage(curImg, 0, 0);
+
+  const rc = document.createElement('canvas');
+  rc.width = sw; rc.height = sh;
+  const rctx = rc.getContext('2d');
+  rctx.translate(sw / 2, sh / 2);
+  rctx.rotate(rot * Math.PI / 180);
+  rctx.drawImage(off, -off.width / 2, -off.height / 2);
+
+  const c = document.createElement('canvas');
+  c.width = CFG.width_dots; c.height = dh;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(rc, 0, 0, CFG.width_dots, dh);
+
+  const id = ctx.getImageData(0, 0, CFG.width_dots, dh), d = id.data;
+  const n = CFG.width_dots * dh, g = new Float32Array(n);
+  for (let i = 0, p = 0; i < n; i++, p += 4) {
+    let v = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+    v *= bri; v = (v - 128) * con + 128;
+    if (invert) v = 255 - v;
+    g[i] = v < 0 ? 0 : v > 255 ? 255 : v;
+  }
+  const out = new Uint8Array(n);
+  if (dither) {
+    const b = Float32Array.from(g);
+    for (let y = 0; y < dh; y++) for (let x = 0; x < CFG.width_dots; x++) {
+      const i = y * CFG.width_dots + x;
+      const old = b[i], nv = old >= 128 ? 255 : 0; b[i] = nv;
+      const err = old - nv;
+      if (x + 1 < CFG.width_dots) b[i + 1] += err * 7 / 16;
+      if (y + 1 < dh) {
+        if (x > 0) b[i + CFG.width_dots - 1] += err * 3 / 16;
+        b[i + CFG.width_dots] += err * 5 / 16;
+        if (x + 1 < CFG.width_dots) b[i + CFG.width_dots + 1] += err * 1 / 16;
+      }
+    }
+    for (let i = 0; i < n; i++) out[i] = b[i] >= 128 ? 255 : 0;
+  } else {
+    for (let i = 0; i < n; i++) out[i] = g[i] >= thr ? 255 : 0;
+  }
+  for (let i = 0, p = 0; i < n; i++, p += 4) { d[p] = d[p + 1] = d[p + 2] = out[i]; d[p + 3] = 255; }
+  ctx.putImageData(id, 0, 0);
+
+  imgCanvas = c;
+  previewImage();
+}
+
+async function previewImage() {
+  if (!curFile) return;
+  const fd = new FormData();
+  fd.append('file', curFile);
+  fd.append('align', $('alignI').value);
+  fd.append('rotate', $('rotI').value);
+  fd.append('feed', $('feedI').value);
+  fd.append('ts_enable', $('tsI').checked ? 'true' : 'false');
+  fd.append('ts_pos', $('tsPosI').value);
+  fd.append('ts_fmt', $('tsFmtI').value);
+  fd.append('ts_size', $('tsSizeI').value);
+  const res = await fetch('/preview?token=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });
+  const lay = await res.json().catch(() => null);
+  if (!lay || lay.status !== 'ok') return;
+
+  const cv = $('cvI');
+  cv.width = lay.width_dots; cv.height = Math.max(1, lay.total_dots);
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+  for (const b of lay.blocks) {
+    if (b.type === 'text') {
+      ctx.font = Math.max(6, Math.round(lay.char_h * b.size * 0.72)) + 'px monospace';
+      ctx.textBaseline = 'middle'; ctx.fillStyle = '#000';
+      let x = b.x;
+      for (const ch of b.text) {
+        const cw = lay.char_w * b.size * (isWide(ch) ? 2 : 1);
+        ctx.fillText(ch, x, b.y + (lay.char_h * b.size) / 2);
+        x += cw;
+      }
+    } else if (b.type === 'image') {
+      if (imgCanvas) ctx.drawImage(imgCanvas, b.x, b.y, b.w, b.h);
+    } else if (b.type === 'feed') {
+      ctx.fillStyle = '#fafafa'; ctx.fillRect(0, b.y, cv.width, b.h);
+      // 虚线画在留白区底部 = 真正的切纸位置
+      const cutY = b.y + b.h - 0.5;
+      ctx.strokeStyle = '#e47ab0'; ctx.setLineDash([6, 5]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, cutY); ctx.lineTo(cv.width, cutY); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  let m = `纸宽 ${paperMm()}毫米 · ${lay.width_dots} 点 · 高 <b>${(lay.total_dots / 8).toFixed(0)} mm</b>`;
+  if (lay.image) m += ` · 图 ${lay.image.w}×${lay.image.h}`;
+  $('metaI').innerHTML = m;
+}
+
+$('file').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  if (!f.type.startsWith('image/')) { alert('请选择图片文件'); return; }
+  curFile = f;
+  const img = new Image();
+  img.onload = () => { curImg = img; URL.revokeObjectURL(img.src); $('imgOpts').style.display = 'block'; processImage(); };
+  img.src = URL.createObjectURL(f);
+});
+
+$('clearImg').addEventListener('click', e => {
+  e.preventDefault();
+  curFile = null; curImg = null; imgCanvas = null;
+  $('file').value = '';
+  $('imgOpts').style.display = 'none';
+});
+
+['rotI', 'alignI', 'tsPosI', 'tsFmtI', 'tsSizeI'].forEach(id => $(id).addEventListener('change', processImage));
+$('tsI').addEventListener('change', () => { syncTs(); previewImage(); });
+['thr', 'bri', 'con'].forEach(id => $(id).addEventListener('input', () => {
+  $('thrV').textContent = $('thr').value;
+  $('briV').textContent = (+$('bri').value).toFixed(2);
+  $('conV').textContent = (+$('con').value).toFixed(2);
+  processImage();
+}));
+['dither', 'invert'].forEach(id => $(id).addEventListener('change', processImage));
+$('feedI').addEventListener('input', () => { $('feedIV').textContent = $('feedI').value; previewImage(); });
+
+// ---------- 提交打印 ----------
+async function submit(fd, btn, msgEl, label) {
+  msgEl.className = 'msg'; msgEl.textContent = '';
+  btn.disabled = true; btn.textContent = '发送中...';
+  try {
+    const res = await fetch('/print/job?token=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.status === 'ok') {
+      msgEl.className = 'msg ok'; msgEl.textContent = '已发送打印任务';
+      // 日志区已经打开过就顺手刷新到第 1 页，刚打的这条立刻可见
+      if (logLoaded) loadLogs(1);
+    } else {
+      msgEl.className = 'msg err';
+      msgEl.textContent = '打印失败：' + (data.message || data.detail || ('HTTP ' + res.status));
+    }
+  } catch (e) {
+    msgEl.className = 'msg err'; msgEl.textContent = '请求失败：' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+
+$('clearText').addEventListener('click', () => {
+  lastText = '';
+  clearTimeout(timerT);
+  renderText('', 0, true);
+  $('msgText').className = 'msg';
+  $('msgText').textContent = '';
+});
+
+$('btnText').addEventListener('click', () => {
+  const t = plainText();
+  if (!t.trim()) { $('msgText').className = 'msg err'; $('msgText').textContent = '请输入打印内容'; return; }
+  const fd = new FormData();
+  fd.append('text', t);
+  fd.append('align', $('alignT').value);
+  fd.append('size', $('sizeT').value);
+  fd.append('feed', $('feedT').value);
+  fd.append('ts_enable', $('tsT').checked ? 'true' : 'false');
+  fd.append('ts_pos', $('tsPosT').value);
+  fd.append('ts_fmt', $('tsFmtT').value);
+  fd.append('ts_size', $('tsSizeT').value);
+  fd.append('no_log', $('noLog').checked ? 'true' : 'false');
+  submit(fd, $('btnText'), $('msgText'), '打印文字');
+});
+
+$('btnImg').addEventListener('click', () => {
+  if (!curFile) { $('msgImg').className = 'msg err'; $('msgImg').textContent = '请先选择图片'; return; }
+  const fd = new FormData();
+  fd.append('file', curFile);
+  fd.append('align', $('alignI').value);
+  fd.append('rotate', $('rotI').value);
+  fd.append('feed', $('feedI').value);
+  fd.append('dither', $('dither').checked ? 'true' : 'false');
+  fd.append('invert', $('invert').checked ? 'true' : 'false');
+  fd.append('threshold', $('thr').value);
+  fd.append('brightness', $('bri').value);
+  fd.append('contrast', $('con').value);
+  fd.append('ts_enable', $('tsI').checked ? 'true' : 'false');
+  fd.append('ts_pos', $('tsPosI').value);
+  fd.append('ts_fmt', $('tsFmtI').value);
+  fd.append('ts_size', $('tsSizeI').value);
+  fd.append('no_log', $('noLogI').checked ? 'true' : 'false');
+  submit(fd, $('btnImg'), $('msgImg'), '打印图片');
+});
+
+// ---------- 日志（分页） ----------
+let logPage = 1, logPages = 1;
+let logLoaded = false;          // 日志区是否已经打开过（打开过才在打印后自动刷新）
+const LOG_PAGE_SIZE = 10;
+
+async function loadLogs(page) {
+  logPage = Math.max(1, page || logPage);
+  try {
+    const url = `/logs?page=${logPage}&page_size=${LOG_PAGE_SIZE}&token=` + encodeURIComponent(TOKEN);
+    const data = await fetch(url).then(r => r.json());
+    const items = data.items || [];
+    $('logList').innerHTML = items.length ? items.map(it => {
+      const cls = it.result === 'ok' ? 'r-ok' : 'r-err';
+      const content = (it.text || '').replace(/\n/g, ' / ').replace(/</g, '&lt;');
+      return `<div class="log-item"><span class="t">${it.time || ''}</span>`
+        + `<span class="${cls}">[${it.result}]</span> ${content}`
+        + (it.result !== 'ok' && it.detail ? ` <span style="color:#999">(${it.detail})</span>` : '')
+        + `</div>`;
+    }).join('') : '<div class="log-item">暂无记录</div>';
+
+    logLoaded = true;
+    logPages = data.pages || 1;
+    $('logPager').style.display = (data.total || 0) > 0 ? 'flex' : 'none';
+    $('logPageInfo').textContent = `第 ${data.page || logPage}/${logPages} 页 · 共 ${data.total || 0} 条`;
+    $('logPrev').disabled = logPage <= 1;
+    $('logNext').disabled = logPage >= logPages;
+  } catch (err) {
+    $('logList').innerHTML = '<div class="log-item">加载失败：' + err.message + '</div>';
+  }
+}
+
+$('loadLogs').addEventListener('click', e => { e.preventDefault(); loadLogs(1); });
+$('logPrev').addEventListener('click', () => { if (logPage > 1) loadLogs(logPage - 1); });
+$('logNext').addEventListener('click', () => { if (logPage < logPages) loadLogs(logPage + 1); });
+
+$('clearLogs').addEventListener('click', async () => {
+  if (!confirm('确定清空全部打印记录？（不影响打印机）')) return;
+  try {
+    const res = await fetch('/logs/clear?token=' + encodeURIComponent(TOKEN), { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.status !== 'ok') {
+      alert('清空失败：' + (data.message || ('HTTP ' + res.status)));
+      return;
+    }
+    logPage = 1;
+    loadLogs(1);
+  } catch (err) {
+    alert('清空失败：' + err.message);
+  }
+});
+</script>
+</body>
+</html>

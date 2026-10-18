@@ -1,0 +1,22 @@
+services:
+  label-print:
+    build: .
+    image: label-print:1.0
+    container_name: label-print
+    # 使用 host 网络，方便 Lucky 反向代理 127.0.0.1:7900
+    network_mode: host
+    env_file:
+      - config.env
+    # 直连 USB 打印机；若仍提示权限不足，可改用 privileged: true
+    devices:
+      - "/dev/label-printer:/dev/label-printer"
+    volumes:
+      # 日志目录挂载到宿主机（相对当前 compose 文件）
+      - ./logs:/var/log
+      # 代码目录直接挂载：改完文件不必重新 build，配合 LABEL_PRINT_RELOAD 自动热重载
+      - ./app:/app/app
+      - ./static:/app/static
+      - ./scripts:/app/scripts
+      # 宿主机时区（让日志时间正确）
+      - /etc/localtime:/etc/localtime:ro
+    restart: unless-stopped
