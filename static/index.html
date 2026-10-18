@@ -257,6 +257,40 @@ function syncTs() {
   $('tsSizeI').disabled = !$('tsI').checked;
 }
 
+// ---------- 时间戳格式下拉框：示例随当前时间实时刷新 ----------
+// 与后端 printer.py 的 TIME_FORMATS 保持一致，保证「下拉框看到啥、纸上就打啥」
+const TS_FORMATS = {
+  datetime:     '%Y-%m-%d %H:%M:%S',
+  datetime_min: '%Y-%m-%d %H:%M',
+  cn_full:      '%Y年%m月%d日 %H:%M:%S',
+  cn_short:     '%m月%d日 %H:%M',
+  date:         '%Y-%m-%d',
+  time:         '%H:%M',
+  compact:      '%Y%m%d%H%M%S',
+};
+const _pad2 = n => String(n).padStart(2, '0');
+function fmtTs(fmt, d) {
+  return fmt
+    .replace('%Y', String(d.getFullYear()))
+    .replace('%m', _pad2(d.getMonth() + 1))
+    .replace('%d', _pad2(d.getDate()))
+    .replace('%H', _pad2(d.getHours()))
+    .replace('%M', _pad2(d.getMinutes()))
+    .replace('%S', _pad2(d.getSeconds()));
+}
+function refreshTsOptions() {
+  const d = new Date();
+  ['tsFmtT', 'tsFmtI'].forEach(id => {
+    const sel = $(id);
+    for (const opt of sel.options) {
+      const f = TS_FORMATS[opt.value];
+      if (f) opt.textContent = fmtTs(f, d);
+    }
+  });
+}
+refreshTsOptions();
+setInterval(refreshTsOptions, 1000);
+
 // ---------- 全角判断 ----------
 function isWide(ch) {
   const c = ch.codePointAt(0);
