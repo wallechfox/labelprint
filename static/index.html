@@ -257,7 +257,7 @@ function syncTs() {
   $('tsSizeI').disabled = !$('tsI').checked;
 }
 
-// ---------- 时间戳格式下拉框：示例随当前时间实时刷新 ----------
+// ---------- 时间戳格式下拉框：示例取页面加载时刻的时间（固定，不实时刷新） ----------
 // 与后端 printer.py 的 TIME_FORMATS 保持一致，保证「下拉框看到啥、纸上就打啥」
 const TS_FORMATS = {
   datetime:     '%Y-%m-%d %H:%M:%S',
@@ -289,7 +289,6 @@ function refreshTsOptions() {
   });
 }
 refreshTsOptions();
-setInterval(refreshTsOptions, 1000);
 
 // ---------- 全角判断 ----------
 function isWide(ch) {
