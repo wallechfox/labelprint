@@ -5,12 +5,13 @@ services:
     container_name: label-print
     # 使用 host 网络，方便 Lucky 反向代理 127.0.0.1:7900
     network_mode: host
+    # 特权模式：放开 cgroup 设备权限，容器才能写 USB 打印机（配合挂载 /dev 实时看到设备）
+    privileged: true
     env_file:
       - config.env
-    # 直连 USB 打印机；若仍提示权限不足，可改用 privileged: true
-    devices:
-      - "/dev/label-printer:/dev/label-printer"
     volumes:
+      # 挂载宿主机 /dev：实时看到打印机设备节点，udev 符号链接随插拔/上电实时变化，不再受静态设备号限制
+      - /dev:/dev
       # 日志目录挂载到宿主机（相对当前 compose 文件）
       - ./logs:/var/log
       # 代码目录直接挂载：改完文件不必重新 build，配合 LABEL_PRINT_RELOAD 自动热重载

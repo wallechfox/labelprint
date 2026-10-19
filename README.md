@@ -83,12 +83,7 @@ sed -i 's|^LABEL_PRINT_DEVICE=.*|LABEL_PRINT_DEVICE=/dev/label-printer|' config.
 grep -E '^(LABEL_PRINT_TOKEN|LABEL_PRINT_DEVICE|LABEL_PRINT_WIDTH)=' config.env
 ```
 
-同时把 `docker-compose.yml` 里的设备映射改成同一路径：
-
-```yaml
-devices:
-  - "/dev/label-printer:/dev/label-printer"
-```
+`docker-compose.yml` 已默认用 `privileged: true` + 挂载 `/dev` 直通打印机，**无需再改设备映射**；只要 `LABEL_PRINT_DEVICE` 与上面的符号链接一致即可。
 
 ### 5. 构建并启动
 
@@ -372,7 +367,7 @@ location / {
 |---|---|
 | 打印没反应 | `docker exec label-print bash scripts/print_label.sh "测试"`；再看 `docker logs label-print` |
 | 打到别的打印机 | 设备号漂移，做 udev 固定名（见快速开始第 3 步） |
-| `ERROR: 打印设备不可写` | `docker-compose.yml` 里把 `devices` 换成 `privileged: true` |
+| `ERROR: 打印设备不可写` | 确认 `docker-compose.yml` 已启用 `privileged: true`；或 udev 规则里补 `MODE="0666"` |
 | 中文乱码 | `LABEL_PRINT_ENCODING`：`gbk` → `gb18030` → `utf-8` |
 | 最后一行卡在机器里 | 调大「末尾空白行」或 `LABEL_PRINT_FEED` |
 | 末尾空白行调了完全没反应 | `LABEL_PRINT_LINE_SPACING` 保持 `0`（填 0 点行距会让空行不走纸） |
@@ -563,7 +558,8 @@ docker builder prune --keep-storage=2GB -f     # 构建缓存只留 2GB
 
 ## 更新日志
 
-- **v1.2（当前）**：时间戳格式下拉框示例改为按页面加载时刻生成（固定，不实时刷新），与打印结果同一套格式；明确实际打印时间戳以「点打印那一刻」的服务器时间为准
+- **v1.3（当前）**：容器改用 `privileged: true` + 挂载 `/dev` 直通打印机，USB 换口/重上电后无需重建容器；打印前检测设备，离线时返回友好提示「打印机离线，请检查打印机电源是否打开」
+- **v1.2**：时间戳格式下拉框示例改为按页面加载时刻生成（固定，不实时刷新），与打印结果同一套格式；明确实际打印时间戳以「点打印那一刻」的服务器时间为准
 - **v1.1**：首个正式发布版本。文字打印（自动折行 + 标点避头尾 + 时间戳 + 字号 1~6x）、图片打印（旋转 / 反色 / 阈值 / 抖动）、编辑区即预览（所见即所得）、无痕模式、打印记录分页与清空、URL 令牌鉴权、Docker 部署与热重载；并修复末尾回车不生效、快速输入字符乱序、Home/End 与上下键导航失灵、输入字符跳动等编辑器问题
 
 ---

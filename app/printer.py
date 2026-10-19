@@ -169,6 +169,13 @@ def _build_env(align: str | None = None, size: str | None = None) -> dict:
 
 
 def _run(cmd: list[str], env: dict, log_text: str, source: str, no_log: bool = False) -> tuple[bool, str]:
+    # 打印前先检测打印机是否在线（挂载 /dev 后，符号链接不存在即代表设备离线），
+    # 离线直接返回友好提示，不再让脚本抛出一串英文错误
+    if not os.path.exists(DEVICE):
+        msg = "打印机离线，请检查打印机电源是否打开"
+        if not no_log:
+            write_log(log_text, "error", msg, source)
+        return False, msg
     try:
         # 按字节收输出再自行解码：Windows 本地按 GBK 解码 UTF-8 输出会直接抛异常
         proc = subprocess.run(cmd, capture_output=True, timeout=TIMEOUT, env=env)
