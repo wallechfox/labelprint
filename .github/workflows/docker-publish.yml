@@ -58,3 +58,18 @@ jobs:
             BASE_IMAGE=python:3.12-slim
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # push v* 标签时自动创建 GitHub Release（说明自动生成）
+  create-release:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
